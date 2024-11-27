@@ -69,6 +69,7 @@ type Mongo struct {
 	Database    string   `mapstructure:"database"`
 	Username    string   `mapstructure:"username"`
 	Password    string   `mapstructure:"password"`
+	AuthSource  string   `mapstructure:"authSource"`
 	MaxPoolSize int      `mapstructure:"maxPoolSize"`
 	MaxRetry    int      `mapstructure:"maxRetry"`
 }
@@ -185,7 +186,6 @@ type MsgGateway struct {
 		WebsocketMaxMsgLen  int   `mapstructure:"websocketMaxMsgLen"`
 		WebsocketTimeout    int   `mapstructure:"websocketTimeout"`
 	} `mapstructure:"longConnSvr"`
-	MultiLoginPolicy int `mapstructure:"multiLoginPolicy"`
 }
 
 type MsgTransfer struct {
@@ -213,12 +213,12 @@ type Push struct {
 		FilePath string `mapstructure:"filePath"`
 		AuthURL  string `mapstructure:"authURL"`
 	} `mapstructure:"fcm"`
-	JPNS struct {
+	JPush struct {
 		AppKey       string `mapstructure:"appKey"`
 		MasterSecret string `mapstructure:"masterSecret"`
 		PushURL      string `mapstructure:"pushURL"`
 		PushIntent   string `mapstructure:"pushIntent"`
-	} `mapstructure:"jpns"`
+	} `mapstructure:"jpush"`
 	IOSPush struct {
 		PushSound  string `mapstructure:"pushSound"`
 		BadgeCount bool   `mapstructure:"badgeCount"`
@@ -346,22 +346,33 @@ type Redis struct {
 }
 
 type BeforeConfig struct {
-	Enable         bool `mapstructure:"enable"`
-	Timeout        int  `mapstructure:"timeout"`
-	FailedContinue bool `mapstructure:"failedContinue"`
+	Enable         bool     `mapstructure:"enable"`
+	Timeout        int      `mapstructure:"timeout"`
+	FailedContinue bool     `mapstructure:"failedContinue"`
+	AllowedTypes   []string `mapstructure:"allowedTypes"`
+	DeniedTypes    []string `mapstructure:"deniedTypes"`
 }
 
 type AfterConfig struct {
 	Enable       bool     `mapstructure:"enable"`
 	Timeout      int      `mapstructure:"timeout"`
 	AttentionIds []string `mapstructure:"attentionIds"`
+	AllowedTypes []string `mapstructure:"allowedTypes"`
+	DeniedTypes  []string `mapstructure:"deniedTypes"`
 }
 
 type Share struct {
 	Secret          string          `mapstructure:"secret"`
 	RpcRegisterName RpcRegisterName `mapstructure:"rpcRegisterName"`
 	IMAdminUserID   []string        `mapstructure:"imAdminUserID"`
+	MultiLogin      MultiLogin      `mapstructure:"multiLogin"`
 }
+
+type MultiLogin struct {
+	Policy       int `mapstructure:"policy"`
+	MaxNumOneEnd int `mapstructure:"maxNumOneEnd"`
+}
+
 type RpcRegisterName struct {
 	User           string `mapstructure:"user"`
 	Friend         string `mapstructure:"friend"`
@@ -428,12 +439,13 @@ type Webhooks struct {
 	BeforeInviteUserToGroup  BeforeConfig `mapstructure:"beforeInviteUserToGroup"`
 	AfterSetGroupInfo        AfterConfig  `mapstructure:"afterSetGroupInfo"`
 	BeforeSetGroupInfo       BeforeConfig `mapstructure:"beforeSetGroupInfo"`
-	AfterSetGroupInfoEX      AfterConfig  `mapstructure:"afterSetGroupInfoEX"`
-	BeforeSetGroupInfoEX     BeforeConfig `mapstructure:"beforeSetGroupInfoEX"`
+	AfterSetGroupInfoEx      AfterConfig  `mapstructure:"afterSetGroupInfoEx"`
+	BeforeSetGroupInfoEx     BeforeConfig `mapstructure:"beforeSetGroupInfoEx"`
 	AfterRevokeMsg           AfterConfig  `mapstructure:"afterRevokeMsg"`
 	BeforeAddBlack           BeforeConfig `mapstructure:"beforeAddBlack"`
 	AfterAddFriend           AfterConfig  `mapstructure:"afterAddFriend"`
 	BeforeAddFriendAgree     BeforeConfig `mapstructure:"beforeAddFriendAgree"`
+	AfterAddFriendAgree      AfterConfig  `mapstructure:"afterAddFriendAgree"`
 	AfterDeleteFriend        AfterConfig  `mapstructure:"afterDeleteFriend"`
 	BeforeImportFriends      BeforeConfig `mapstructure:"beforeImportFriends"`
 	AfterImportFriends       AfterConfig  `mapstructure:"afterImportFriends"`
@@ -467,6 +479,7 @@ func (m *Mongo) Build() *mongoutil.Config {
 		Database:    m.Database,
 		Username:    m.Username,
 		Password:    m.Password,
+		AuthSource:  m.AuthSource,
 		MaxPoolSize: m.MaxPoolSize,
 		MaxRetry:    m.MaxRetry,
 	}

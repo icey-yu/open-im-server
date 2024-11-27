@@ -47,7 +47,6 @@ import (
 	"github.com/openimsdk/tools/db/pagination"
 	registry "github.com/openimsdk/tools/discovery"
 	"github.com/openimsdk/tools/errs"
-	"github.com/openimsdk/tools/log"
 	"github.com/openimsdk/tools/utils/datautil"
 	"google.golang.org/grpc"
 )
@@ -117,18 +116,17 @@ func Start(ctx context.Context, config *Config, client registry.SvcDiscoveryRegi
 
 func (s *userServer) GetDesignateUsers(ctx context.Context, req *pbuser.GetDesignateUsersReq) (resp *pbuser.GetDesignateUsersResp, err error) {
 	resp = &pbuser.GetDesignateUsersResp{}
-	users, err := s.db.FindWithError(ctx, req.UserIDs)
+	users, err := s.db.Find(ctx, req.UserIDs)
 	if err != nil {
 		return nil, err
 	}
+
 	resp.UsersInfo = convert.UsersDB2Pb(users)
 	return resp, nil
 }
 
 // deprecated:
-
-//UpdateUserInfo
-
+// UpdateUserInfo
 func (s *userServer) UpdateUserInfo(ctx context.Context, req *pbuser.UpdateUserInfoReq) (resp *pbuser.UpdateUserInfoResp, err error) {
 	resp = &pbuser.UpdateUserInfoResp{}
 	err = authverify.CheckAccessV3(ctx, req.UserInfo.UserID, s.config.Share.IMAdminUserID)
@@ -263,10 +261,11 @@ func (s *userServer) UserRegister(ctx context.Context, req *pbuser.UserRegisterR
 	if len(req.Users) == 0 {
 		return nil, errs.ErrArgs.WrapMsg("users is empty")
 	}
-	if req.Secret != s.config.Share.Secret {
-		log.ZDebug(ctx, "UserRegister", s.config.Share.Secret, req.Secret)
-		return nil, errs.ErrNoPermission.WrapMsg("secret invalid")
+
+	if err = authverify.CheckAdmin(ctx, s.config.Share.IMAdminUserID); err != nil {
+		return nil, err
 	}
+
 	if datautil.DuplicateAny(req.Users, func(e *sdkws.UserInfo) string { return e.UserID }) {
 		return nil, errs.ErrArgs.WrapMsg("userID repeated")
 	}

@@ -38,7 +38,7 @@ const (
 func NewConversationRedis(rdb redis.UniversalClient, localCache *config.LocalCache, opts *rockscache.Options, db database.Conversation) cache.ConversationCache {
 	batchHandler := NewBatchDeleterRedis(rdb, opts, []string{localCache.Conversation.Topic})
 	c := localCache.Conversation
-	log.ZDebug(context.Background(), "black local cache init", "Topic", c.Topic, "SlotNum", c.SlotNum, "SlotSize", c.SlotSize, "enable", c.Enable())
+	log.ZDebug(context.Background(), "conversation local cache init", "Topic", c.Topic, "SlotNum", c.SlotNum, "SlotSize", c.SlotSize, "enable", c.Enable())
 	return &ConversationRedisCache{
 		BatchDeleter:   batchHandler,
 		rcClient:       rockscache.NewClient(rdb, *opts),
@@ -69,6 +69,14 @@ func (c *ConversationRedisCache) getConversationKey(ownerUserID, conversationID 
 
 func (c *ConversationRedisCache) getConversationIDsKey(ownerUserID string) string {
 	return cachekey.GetConversationIDsKey(ownerUserID)
+}
+
+func (c *ConversationRedisCache) getNotNotifyConversationIDsKey(ownerUserID string) string {
+	return cachekey.GetNotNotifyConversationIDsKey(ownerUserID)
+}
+
+func (c *ConversationRedisCache) getPinnedConversationIDsKey(ownerUserID string) string {
+	return cachekey.GetPinnedConversationIDs(ownerUserID)
 }
 
 func (c *ConversationRedisCache) getSuperGroupRecvNotNotifyUserIDsKey(groupID string) string {
@@ -102,6 +110,18 @@ func (c *ConversationRedisCache) getConversationUserMaxVersionKey(ownerUserID st
 func (c *ConversationRedisCache) GetUserConversationIDs(ctx context.Context, ownerUserID string) ([]string, error) {
 	return getCache(ctx, c.rcClient, c.getConversationIDsKey(ownerUserID), c.expireTime, func(ctx context.Context) ([]string, error) {
 		return c.conversationDB.FindUserIDAllConversationID(ctx, ownerUserID)
+	})
+}
+
+func (c *ConversationRedisCache) GetUserNotNotifyConversationIDs(ctx context.Context, userID string) ([]string, error) {
+	return getCache(ctx, c.rcClient, c.getNotNotifyConversationIDsKey(userID), c.expireTime, func(ctx context.Context) ([]string, error) {
+		return c.conversationDB.FindUserIDAllNotNotifyConversationID(ctx, userID)
+	})
+}
+
+func (c *ConversationRedisCache) GetPinnedConversationIDs(ctx context.Context, userID string) ([]string, error) {
+	return getCache(ctx, c.rcClient, c.getPinnedConversationIDsKey(userID), c.expireTime, func(ctx context.Context) ([]string, error) {
+		return c.conversationDB.FindUserIDAllPinnedConversationID(ctx, userID)
 	})
 }
 
@@ -238,6 +258,22 @@ func (c *ConversationRedisCache) DelConversationNotReceiveMessageUserIDs(convers
 	cache := c.CloneConversationCache()
 	for _, conversationID := range conversationIDs {
 		cache.AddKeys(c.getConversationNotReceiveMessageUserIDsKey(conversationID))
+	}
+	return cache
+}
+
+func (c *ConversationRedisCache) DelConversationNotNotifyMessageUserIDs(userIDs ...string) cache.ConversationCache {
+	cache := c.CloneConversationCache()
+	for _, userID := range userIDs {
+		cache.AddKeys(c.getNotNotifyConversationIDsKey(userID))
+	}
+	return cache
+}
+
+func (c *ConversationRedisCache) DelConversationPinnedMessageUserIDs(userIDs ...string) cache.ConversationCache {
+	cache := c.CloneConversationCache()
+	for _, userID := range userIDs {
+		cache.AddKeys(c.getPinnedConversationIDsKey(userID))
 	}
 	return cache
 }

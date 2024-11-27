@@ -167,11 +167,11 @@ func (g *groupServer) CheckGroupAdmin(ctx context.Context, groupID string) error
 	return nil
 }
 
-func (g *groupServer) GetPublicUserInfoMap(ctx context.Context, userIDs []string, complete bool) (map[string]*sdkws.PublicUserInfo, error) {
+func (g *groupServer) GetPublicUserInfoMap(ctx context.Context, userIDs []string) (map[string]*sdkws.PublicUserInfo, error) {
 	if len(userIDs) == 0 {
 		return map[string]*sdkws.PublicUserInfo{}, nil
 	}
-	users, err := g.user.GetPublicUserInfos(ctx, userIDs, complete)
+	users, err := g.user.GetPublicUserInfos(ctx, userIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -465,7 +465,7 @@ func (g *groupServer) InviteUserToGroup(ctx context.Context, req *pbgroup.Invite
 		return nil, err
 	}
 
-	if err = g.notification.MemberEnterNotification(ctx, req.GroupID, req.InvitedUserIDs...); err != nil {
+	if err = g.notification.GroupApplicationAgreeMemberEnterNotification(ctx, req.GroupID, opUserID, req.InvitedUserIDs...); err != nil {
 		return nil, err
 	}
 	return &pbgroup.InviteUserToGroupResp{}, nil
@@ -696,7 +696,7 @@ func (g *groupServer) GetGroupApplicationList(ctx context.Context, req *pbgroup.
 		userIDs = append(userIDs, gr.UserID)
 	}
 	userIDs = datautil.Distinct(userIDs)
-	userMap, err := g.user.GetPublicUserInfoMap(ctx, userIDs, true)
+	userMap, err := g.user.GetPublicUserInfoMap(ctx, userIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -1026,7 +1026,7 @@ func (g *groupServer) SetGroupInfo(ctx context.Context, req *pbgroup.SetGroupInf
 	}
 	num := len(update)
 	if req.GroupInfoForSet.Notification != "" {
-		num--
+		num -= 3
 		func() {
 			conversation := &pbconversation.ConversationReq{
 				ConversationID:   msgprocessor.GetConversationIDBySessionType(constant.ReadGroupChatType, req.GroupInfoForSet.GroupID),
@@ -1058,13 +1058,13 @@ func (g *groupServer) SetGroupInfo(ctx context.Context, req *pbgroup.SetGroupInf
 	return &pbgroup.SetGroupInfoResp{}, nil
 }
 
-func (g *groupServer) SetGroupInfoEX(ctx context.Context, req *pbgroup.SetGroupInfoEXReq) (*pbgroup.SetGroupInfoEXResp, error) {
+func (g *groupServer) SetGroupInfoEx(ctx context.Context, req *pbgroup.SetGroupInfoExReq) (*pbgroup.SetGroupInfoExResp, error) {
 	var opMember *model.GroupMember
 
 	if !authverify.IsAppManagerUid(ctx, g.config.Share.IMAdminUserID) {
 		var err error
 
-		opMember, err = g.db.TakeGroupMember(ctx, req.GroupInfoForSetEX.GroupID, mcontext.GetOpUserID(ctx))
+		opMember, err = g.db.TakeGroupMember(ctx, req.GroupID, mcontext.GetOpUserID(ctx))
 		if err != nil {
 			return nil, err
 		}
@@ -1078,11 +1078,11 @@ func (g *groupServer) SetGroupInfoEX(ctx context.Context, req *pbgroup.SetGroupI
 		}
 	}
 
-	if err := g.webhookBeforeSetGroupInfoEX(ctx, &g.config.WebhooksConfig.BeforeSetGroupInfoEX, req); err != nil && err != servererrs.ErrCallbackContinue {
+	if err := g.webhookBeforeSetGroupInfoEx(ctx, &g.config.WebhooksConfig.BeforeSetGroupInfoEx, req); err != nil && err != servererrs.ErrCallbackContinue {
 		return nil, err
 	}
 
-	group, err := g.db.TakeGroup(ctx, req.GroupInfoForSetEX.GroupID)
+	group, err := g.db.TakeGroup(ctx, req.GroupID)
 	if err != nil {
 		return nil, err
 	}
@@ -1104,16 +1104,20 @@ func (g *groupServer) SetGroupInfoEX(ctx context.Context, req *pbgroup.SetGroupI
 		return nil, err
 	}
 
-	updatedData := UpdateGroupInfoEXMap(ctx, req.GroupInfoForSetEX)
+	updatedData, err := UpdateGroupInfoExMap(ctx, req)
 	if len(updatedData) == 0 {
-		return &pbgroup.SetGroupInfoEXResp{}, nil
+		return &pbgroup.SetGroupInfoExResp{}, nil
+	}
+
+	if err != nil {
+		return nil, err
 	}
 
 	if err := g.db.UpdateGroup(ctx, group.GroupID, updatedData); err != nil {
 		return nil, err
 	}
 
-	group, err = g.db.TakeGroup(ctx, req.GroupInfoForSetEX.GroupID)
+	group, err = g.db.TakeGroup(ctx, req.GroupID)
 	if err != nil {
 		return nil, err
 	}
@@ -1129,18 +1133,19 @@ func (g *groupServer) SetGroupInfoEX(ctx context.Context, req *pbgroup.SetGroupI
 	}
 
 	num := len(updatedData)
-	if req.GroupInfoForSetEX.Notification != nil {
-		num--
 
-		if req.GroupInfoForSetEX.Notification.Value != "" {
+	if req.Notification != nil {
+		num -= 3
+
+		if req.Notification.Value != "" {
 			func() {
 				conversation := &pbconversation.ConversationReq{
-					ConversationID:   msgprocessor.GetConversationIDBySessionType(constant.ReadGroupChatType, req.GroupInfoForSetEX.GroupID),
+					ConversationID:   msgprocessor.GetConversationIDBySessionType(constant.ReadGroupChatType, req.GroupID),
 					ConversationType: constant.ReadGroupChatType,
-					GroupID:          req.GroupInfoForSetEX.GroupID,
+					GroupID:          req.GroupID,
 				}
 
-				resp, err := g.GetGroupMemberUserIDs(ctx, &pbgroup.GetGroupMemberUserIDsReq{GroupID: req.GroupInfoForSetEX.GroupID})
+				resp, err := g.GetGroupMemberUserIDs(ctx, &pbgroup.GetGroupMemberUserIDsReq{GroupID: req.GroupID})
 				if err != nil {
 					log.ZWarn(ctx, "GetGroupMemberIDs is failed.", err)
 					return
@@ -1157,7 +1162,7 @@ func (g *groupServer) SetGroupInfoEX(ctx context.Context, req *pbgroup.SetGroupI
 		}
 	}
 
-	if req.GroupInfoForSetEX.GroupName != "" {
+	if req.GroupName != nil {
 		num--
 		g.notification.GroupInfoSetNameNotification(ctx, &sdkws.GroupInfoSetNameTips{Group: tips.Group, OpUser: tips.OpUser})
 	}
@@ -1166,9 +1171,9 @@ func (g *groupServer) SetGroupInfoEX(ctx context.Context, req *pbgroup.SetGroupI
 		g.notification.GroupInfoSetNotification(ctx, tips)
 	}
 
-	g.webhookAfterSetGroupInfoEX(ctx, &g.config.WebhooksConfig.AfterSetGroupInfoEX, req)
+	g.webhookAfterSetGroupInfoEx(ctx, &g.config.WebhooksConfig.AfterSetGroupInfoEx, req)
 
-	return &pbgroup.SetGroupInfoEXResp{}, nil
+	return &pbgroup.SetGroupInfoExResp{}, nil
 }
 
 func (g *groupServer) TransferGroupOwner(ctx context.Context, req *pbgroup.TransferGroupOwnerReq) (*pbgroup.TransferGroupOwnerResp, error) {
@@ -1176,36 +1181,53 @@ func (g *groupServer) TransferGroupOwner(ctx context.Context, req *pbgroup.Trans
 	if err != nil {
 		return nil, err
 	}
+
 	if group.Status == constant.GroupStatusDismissed {
 		return nil, servererrs.ErrDismissedAlready.Wrap()
 	}
+
 	if req.OldOwnerUserID == req.NewOwnerUserID {
 		return nil, errs.ErrArgs.WrapMsg("OldOwnerUserID == NewOwnerUserID")
 	}
+
 	members, err := g.db.FindGroupMembers(ctx, req.GroupID, []string{req.OldOwnerUserID, req.NewOwnerUserID})
 	if err != nil {
 		return nil, err
 	}
+
 	if err := g.PopulateGroupMember(ctx, members...); err != nil {
 		return nil, err
 	}
+
 	memberMap := datautil.SliceToMap(members, func(e *model.GroupMember) string { return e.UserID })
 	if ids := datautil.Single([]string{req.OldOwnerUserID, req.NewOwnerUserID}, datautil.Keys(memberMap)); len(ids) > 0 {
 		return nil, errs.ErrArgs.WrapMsg("user not in group " + strings.Join(ids, ","))
 	}
+
 	oldOwner := memberMap[req.OldOwnerUserID]
 	if oldOwner == nil {
 		return nil, errs.ErrArgs.WrapMsg("OldOwnerUserID not in group " + req.NewOwnerUserID)
 	}
+
 	newOwner := memberMap[req.NewOwnerUserID]
 	if newOwner == nil {
 		return nil, errs.ErrArgs.WrapMsg("NewOwnerUser not in group " + req.NewOwnerUserID)
 	}
+
 	if !authverify.IsAppManagerUid(ctx, g.config.Share.IMAdminUserID) {
 		if !(mcontext.GetOpUserID(ctx) == oldOwner.UserID && oldOwner.RoleLevel == constant.GroupOwner) {
 			return nil, errs.ErrNoPermission.WrapMsg("no permission transfer group owner")
 		}
 	}
+
+	if newOwner.MuteEndTime.After(time.Now()) {
+		if _, err := g.CancelMuteGroupMember(ctx, &pbgroup.CancelMuteGroupMemberReq{
+			GroupID: group.GroupID,
+			UserID:  req.NewOwnerUserID}); err != nil {
+			return nil, err
+		}
+	}
+
 	if err := g.db.TransferGroupOwner(ctx, req.GroupID, req.OldOwnerUserID, req.NewOwnerUserID, newOwner.RoleLevel); err != nil {
 		return nil, err
 	}
@@ -1213,6 +1235,7 @@ func (g *groupServer) TransferGroupOwner(ctx context.Context, req *pbgroup.Trans
 	g.webhookAfterTransferGroupOwner(ctx, &g.config.WebhooksConfig.AfterTransferGroupOwner, req)
 
 	g.notification.GroupOwnerTransferredNotification(ctx, req)
+
 	return &pbgroup.TransferGroupOwnerResp{}, nil
 }
 
@@ -1421,32 +1444,38 @@ func (g *groupServer) CancelMuteGroupMember(ctx context.Context, req *pbgroup.Ca
 	if err != nil {
 		return nil, err
 	}
+
 	if err := g.PopulateGroupMember(ctx, member); err != nil {
 		return nil, err
 	}
+
 	if !authverify.IsAppManagerUid(ctx, g.config.Share.IMAdminUserID) {
 		opMember, err := g.db.TakeGroupMember(ctx, req.GroupID, mcontext.GetOpUserID(ctx))
 		if err != nil {
 			return nil, err
 		}
+
 		switch member.RoleLevel {
 		case constant.GroupOwner:
-			return nil, errs.ErrNoPermission.WrapMsg("set group owner mute")
+			return nil, errs.ErrNoPermission.WrapMsg("Can not set group owner unmute")
 		case constant.GroupAdmin:
 			if opMember.RoleLevel != constant.GroupOwner {
-				return nil, errs.ErrNoPermission.WrapMsg("set group admin mute")
+				return nil, errs.ErrNoPermission.WrapMsg("Can not set group admin unmute")
 			}
 		case constant.GroupOrdinaryUsers:
 			if !(opMember.RoleLevel == constant.GroupAdmin || opMember.RoleLevel == constant.GroupOwner) {
-				return nil, errs.ErrNoPermission.WrapMsg("set group ordinary users mute")
+				return nil, errs.ErrNoPermission.WrapMsg("Can not set group ordinary users unmute")
 			}
 		}
 	}
+
 	data := UpdateGroupMemberMutedTimeMap(time.Unix(0, 0))
 	if err := g.db.UpdateGroupMember(ctx, member.GroupID, member.UserID, data); err != nil {
 		return nil, err
 	}
+
 	g.notification.GroupMemberCancelMutedNotification(ctx, req.GroupID, req.UserID)
+
 	return &pbgroup.CancelMuteGroupMemberResp{}, nil
 }
 
@@ -1481,9 +1510,6 @@ func (g *groupServer) SetGroupMemberInfo(ctx context.Context, req *pbgroup.SetGr
 		return nil, errs.ErrNoPermission.WrapMsg("no op user id")
 	}
 	isAppManagerUid := authverify.IsAppManagerUid(ctx, g.config.Share.IMAdminUserID)
-	for i := range req.Members {
-		req.Members[i].FaceURL = nil
-	}
 	groupMembers := make(map[string][]*pbgroup.SetGroupMemberInfo)
 	for i, member := range req.Members {
 		if member.RoleLevel != nil {
@@ -1525,29 +1551,61 @@ func (g *groupServer) SetGroupMemberInfo(ctx context.Context, req *pbgroup.SetGr
 		case 0:
 			if !isAppManagerUid {
 				roleLevel := dbMembers[opUserIndex].RoleLevel
-				if roleLevel != constant.GroupOwner {
-					switch roleLevel {
-					case constant.GroupAdmin:
-						for _, member := range dbMembers {
-							if member.RoleLevel == constant.GroupOwner {
-								return nil, errs.ErrNoPermission.WrapMsg("admin can not change group owner")
-							}
-							if member.RoleLevel == constant.GroupAdmin && member.UserID != opUserID {
-								return nil, errs.ErrNoPermission.WrapMsg("admin can not change other group admin")
-							}
+				var (
+					dbSelf  = &model.GroupMember{}
+					reqSelf *pbgroup.SetGroupMemberInfo
+				)
+				switch roleLevel {
+				case constant.GroupOwner:
+					for _, member := range dbMembers {
+						if member.UserID == opUserID {
+							dbSelf = member
+							break
 						}
-					case constant.GroupOrdinaryUsers:
-						for _, member := range dbMembers {
-							if !(member.RoleLevel == constant.GroupOrdinaryUsers && member.UserID == opUserID) {
-								return nil, errs.ErrNoPermission.WrapMsg("ordinary users can not change other role level")
-							}
+					}
+				case constant.GroupAdmin:
+					for _, member := range dbMembers {
+						if member.UserID == opUserID {
+							dbSelf = member
 						}
-					default:
-						for _, member := range dbMembers {
-							if member.RoleLevel >= roleLevel {
-								return nil, errs.ErrNoPermission.WrapMsg("can not change higher role level")
-							}
+						if member.RoleLevel == constant.GroupOwner {
+							return nil, errs.ErrNoPermission.WrapMsg("admin can not change group owner")
 						}
+						if member.RoleLevel == constant.GroupAdmin && member.UserID != opUserID {
+							return nil, errs.ErrNoPermission.WrapMsg("admin can not change other group admin")
+						}
+					}
+				case constant.GroupOrdinaryUsers:
+					for _, member := range dbMembers {
+						if member.UserID == opUserID {
+							dbSelf = member
+						}
+						if !(member.RoleLevel == constant.GroupOrdinaryUsers && member.UserID == opUserID) {
+							return nil, errs.ErrNoPermission.WrapMsg("ordinary users can not change other role level")
+						}
+					}
+				default:
+					for _, member := range dbMembers {
+						if member.UserID == opUserID {
+							dbSelf = member
+						}
+						if member.RoleLevel >= roleLevel {
+							return nil, errs.ErrNoPermission.WrapMsg("can not change higher role level")
+						}
+					}
+				}
+				for _, member := range req.Members {
+					if member.UserID == opUserID {
+						reqSelf = member
+						break
+					}
+				}
+				if reqSelf != nil && reqSelf.RoleLevel != nil {
+					if reqSelf.RoleLevel.GetValue() > dbSelf.RoleLevel {
+						return nil, errs.ErrNoPermission.WrapMsg("can not improve role level by self")
+					}
+					if roleLevel == constant.GroupOwner {
+						return nil, errs.ErrArgs.WrapMsg("group owner can not change own role level") // Prevent the absence of a group owner
 					}
 				}
 			}
@@ -1681,36 +1739,51 @@ func (g *groupServer) GetGroupUsersReqApplicationList(ctx context.Context, req *
 	if err != nil {
 		return nil, err
 	}
+
 	if len(requests) == 0 {
 		return &pbgroup.GetGroupUsersReqApplicationListResp{}, nil
 	}
+
 	groupIDs := datautil.Distinct(datautil.Slice(requests, func(e *model.GroupRequest) string {
 		return e.GroupID
 	}))
+
 	groups, err := g.db.FindGroup(ctx, groupIDs)
 	if err != nil {
 		return nil, err
 	}
+
 	groupMap := datautil.SliceToMap(groups, func(e *model.Group) string {
 		return e.GroupID
 	})
+
 	if ids := datautil.Single(groupIDs, datautil.Keys(groupMap)); len(ids) > 0 {
 		return nil, servererrs.ErrGroupIDNotFound.WrapMsg(strings.Join(ids, ","))
 	}
+
+	userMap, err := g.user.GetPublicUserInfoMap(ctx, req.UserIDs)
+	if err != nil {
+		return nil, err
+	}
+
 	owners, err := g.db.FindGroupsOwner(ctx, groupIDs)
 	if err != nil {
 		return nil, err
 	}
+
 	if err := g.PopulateGroupMember(ctx, owners...); err != nil {
 		return nil, err
 	}
+
 	ownerMap := datautil.SliceToMap(owners, func(e *model.GroupMember) string {
 		return e.GroupID
 	})
+
 	groupMemberNum, err := g.db.MapGroupMemberNum(ctx, groupIDs)
 	if err != nil {
 		return nil, err
 	}
+
 	return &pbgroup.GetGroupUsersReqApplicationListResp{
 		Total: int64(len(requests)),
 		GroupRequests: datautil.Slice(requests, func(e *model.GroupRequest) *sdkws.GroupRequest {
@@ -1718,7 +1791,72 @@ func (g *groupServer) GetGroupUsersReqApplicationList(ctx context.Context, req *
 			if owner, ok := ownerMap[e.GroupID]; ok {
 				ownerUserID = owner.UserID
 			}
-			return convert.Db2PbGroupRequest(e, nil, convert.Db2PbGroupInfo(groupMap[e.GroupID], ownerUserID, groupMemberNum[e.GroupID]))
+
+			var userInfo *sdkws.PublicUserInfo
+			if user, ok := userMap[e.UserID]; !ok {
+				userInfo = user
+			}
+
+			return convert.Db2PbGroupRequest(e, userInfo, convert.Db2PbGroupInfo(groupMap[e.GroupID], ownerUserID, groupMemberNum[e.GroupID]))
 		}),
 	}, nil
+}
+
+func (g *groupServer) GetSpecifiedUserGroupRequestInfo(ctx context.Context, req *pbgroup.GetSpecifiedUserGroupRequestInfoReq) (*pbgroup.GetSpecifiedUserGroupRequestInfoResp, error) {
+	opUserID := mcontext.GetOpUserID(ctx)
+
+	owners, err := g.db.FindGroupsOwner(ctx, []string{req.GroupID})
+	if err != nil {
+		return nil, err
+	}
+
+	if req.UserID != opUserID {
+		adminIDs, err := g.db.GetGroupRoleLevelMemberIDs(ctx, req.GroupID, constant.GroupAdmin)
+		if err != nil {
+			return nil, err
+		}
+
+		adminIDs = append(adminIDs, owners[0].UserID)
+		adminIDs = append(adminIDs, g.config.Share.IMAdminUserID...)
+
+		if !datautil.Contain(opUserID, adminIDs...) {
+			return nil, errs.ErrNoPermission.WrapMsg("opUser no permission")
+		}
+	}
+
+	requests, err := g.db.FindGroupRequests(ctx, req.GroupID, []string{req.UserID})
+	if err != nil {
+		return nil, err
+	}
+
+	if len(requests) == 0 {
+		return &pbgroup.GetSpecifiedUserGroupRequestInfoResp{}, nil
+	}
+
+	groups, err := g.db.FindGroup(ctx, []string{req.GroupID})
+	if err != nil {
+		return nil, err
+	}
+
+	userInfos, err := g.user.GetPublicUserInfos(ctx, []string{req.UserID})
+	if err != nil {
+		return nil, err
+	}
+
+	groupMemberNum, err := g.db.MapGroupMemberNum(ctx, []string{req.GroupID})
+	if err != nil {
+		return nil, err
+	}
+
+	resp := &pbgroup.GetSpecifiedUserGroupRequestInfoResp{
+		GroupRequests: make([]*sdkws.GroupRequest, 0, len(requests)),
+	}
+
+	for _, request := range requests {
+		resp.GroupRequests = append(resp.GroupRequests, convert.Db2PbGroupRequest(request, userInfos[0], convert.Db2PbGroupInfo(groups[0], owners[0].UserID, groupMemberNum[groups[0].GroupID])))
+	}
+
+	resp.Total = uint32(len(requests))
+
+	return resp, nil
 }

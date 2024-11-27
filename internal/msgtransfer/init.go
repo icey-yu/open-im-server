@@ -128,6 +128,7 @@ func (m *MsgTransfer) Start(index int, config *Config) error {
 
 	go m.historyCH.historyConsumerGroup.RegisterHandleAndConsumer(m.ctx, m.historyCH)
 	go m.historyMongoCH.historyConsumerGroup.RegisterHandleAndConsumer(m.ctx, m.historyMongoCH)
+	go m.historyCH.HandleUserHasReadSeqMessages(m.ctx)
 	err := m.historyCH.redisMessageBatches.Start()
 	if err != nil {
 		return err
@@ -135,6 +136,11 @@ func (m *MsgTransfer) Start(index int, config *Config) error {
 
 	if config.MsgTransfer.Prometheus.Enable {
 		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					mw.PanicStackToLog(m.ctx, r)
+				}
+			}()
 			prometheusPort, err := datautil.GetElemByIndex(config.MsgTransfer.Prometheus.Ports, index)
 			if err != nil {
 				netErr = err
@@ -157,12 +163,14 @@ func (m *MsgTransfer) Start(index int, config *Config) error {
 		// graceful close kafka client.
 		m.cancel()
 		m.historyCH.redisMessageBatches.Close()
+		m.historyCH.Close()
 		m.historyCH.historyConsumerGroup.Close()
 		m.historyMongoCH.historyConsumerGroup.Close()
 		return nil
 	case <-netDone:
 		m.cancel()
 		m.historyCH.redisMessageBatches.Close()
+		m.historyCH.Close()
 		m.historyCH.historyConsumerGroup.Close()
 		m.historyMongoCH.historyConsumerGroup.Close()
 		close(netDone)
