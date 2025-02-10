@@ -10,10 +10,12 @@ import (
 	pbpush "github.com/openimsdk/protocol/push"
 	"github.com/openimsdk/tools/db/redisutil"
 	"github.com/openimsdk/tools/discovery"
+	"github.com/openimsdk/tools/utils/runtimeenv"
 	"google.golang.org/grpc"
 )
 
 type pushServer struct {
+	pbpush.UnimplementedPushMsgServiceServer
 	database      controller.PushDatabase
 	disCov        discovery.SvcDiscoveryRegistry
 	offlinePusher offlinepush.OfflinePusher
@@ -31,11 +33,8 @@ type Config struct {
 	LocalCacheConfig   config.LocalCache
 	Discovery          config.Discovery
 	FcmConfigPath      string
-}
 
-func (p pushServer) PushMsg(ctx context.Context, req *pbpush.PushMsgReq) (*pbpush.PushMsgResp, error) {
-	//todo reserved Interface
-	return nil, nil
+	runTimeEnv string
 }
 
 func (p pushServer) DelUserPushToken(ctx context.Context,
@@ -47,6 +46,8 @@ func (p pushServer) DelUserPushToken(ctx context.Context,
 }
 
 func Start(ctx context.Context, config *Config, client discovery.SvcDiscoveryRegistry, server *grpc.Server) error {
+	config.runTimeEnv = runtimeenv.PrintRuntimeEnvironment()
+
 	rdb, err := redisutil.NewRedisClient(ctx, config.RedisConfig.Build())
 	if err != nil {
 		return err
@@ -59,7 +60,7 @@ func Start(ctx context.Context, config *Config, client discovery.SvcDiscoveryReg
 
 	database := controller.NewPushDatabase(cacheModel, &config.KafkaConfig)
 
-	consumer, err := NewConsumerHandler(config, database, offlinePusher, rdb, client)
+	consumer, err := NewConsumerHandler(ctx, config, database, offlinePusher, rdb, client)
 	if err != nil {
 		return err
 	}

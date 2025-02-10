@@ -2,20 +2,24 @@ package msggateway
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"github.com/openimsdk/open-im-server/v3/pkg/common/webhook"
-	"github.com/openimsdk/open-im-server/v3/pkg/rpccache"
-	pbAuth "github.com/openimsdk/protocol/auth"
-	"github.com/openimsdk/tools/mcontext"
 	"net/http"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/openimsdk/open-im-server/v3/pkg/rpcli"
+
+	"github.com/openimsdk/open-im-server/v3/pkg/common/discovery/etcd"
+	"github.com/openimsdk/open-im-server/v3/pkg/common/webhook"
+	"github.com/openimsdk/open-im-server/v3/pkg/rpccache"
+	pbAuth "github.com/openimsdk/protocol/auth"
+	"github.com/openimsdk/tools/mcontext"
+
 	"github.com/go-playground/validator/v10"
 	"github.com/openimsdk/open-im-server/v3/pkg/common/prommetrics"
 	"github.com/openimsdk/open-im-server/v3/pkg/common/servererrs"
-	"github.com/openimsdk/open-im-server/v3/pkg/rpcclient"
 	"github.com/openimsdk/protocol/constant"
 	"github.com/openimsdk/protocol/msggateway"
 	"github.com/openimsdk/tools/discovery"
@@ -31,7 +35,7 @@ type LongConnServer interface {
 	GetUserAllCons(userID string) ([]*Client, bool)
 	GetUserPlatformCons(userID string, platform int) ([]*Client, bool, bool)
 	Validate(s any) error
-	SetDiscoveryRegistry(client discovery.SvcDiscoveryRegistry, config *Config)
+	SetDiscoveryRegistry(ctx context.Context, client discovery.SvcDiscoveryRegistry, config *Config) error
 	KickUserConn(client *Client) error
 	UnRegister(c *Client)
 	SetKickHandlerInfo(i *kickHandler)
@@ -56,13 +60,13 @@ type WsServer struct {
 	handshakeTimeout  time.Duration
 	writeBufferSize   int
 	validate          *validator.Validate
-	userClient        *rpcclient.UserRpcClient
-	authClient        *rpcclient.Auth
 	disCov            discovery.SvcDiscoveryRegistry
 	Compressor
 	//Encoder
 	MessageHandler
 	webhookClient *webhook.Client
+	userClient    *rpcli.UserClient
+	authClient    *rpcli.AuthClient
 }
 
 type kickHandler struct {
@@ -71,12 +75,28 @@ type kickHandler struct {
 	newClient  *Client
 }
 
-func (ws *WsServer) SetDiscoveryRegistry(disCov discovery.SvcDiscoveryRegistry, config *Config) {
-	ws.MessageHandler = NewGrpcHandler(ws.validate, disCov, &config.Share.RpcRegisterName)
-	u := rpcclient.NewUserRpcClient(disCov, config.Share.RpcRegisterName.User, config.Share.IMAdminUserID)
-	ws.authClient = rpcclient.NewAuth(disCov, config.Share.RpcRegisterName.Auth)
-	ws.userClient = &u
+func (ws *WsServer) SetDiscoveryRegistry(ctx context.Context, disCov discovery.SvcDiscoveryRegistry, config *Config) error {
+	userConn, err := disCov.GetConn(ctx, config.Discovery.RpcService.User)
+	if err != nil {
+		return err
+	}
+	pushConn, err := disCov.GetConn(ctx, config.Discovery.RpcService.Push)
+	if err != nil {
+		return err
+	}
+	authConn, err := disCov.GetConn(ctx, config.Discovery.RpcService.Auth)
+	if err != nil {
+		return err
+	}
+	msgConn, err := disCov.GetConn(ctx, config.Discovery.RpcService.Msg)
+	if err != nil {
+		return err
+	}
+	ws.userClient = rpcli.NewUserClient(userConn)
+	ws.authClient = rpcli.NewAuthClient(authConn)
+	ws.MessageHandler = NewGrpcHandler(ws.validate, rpcli.NewMsgClient(msgConn), rpcli.NewPushMsgServiceClient(pushConn))
 	ws.disCov = disCov
+	return nil
 }
 
 //func (ws *WsServer) SetUserOnlineStatus(ctx context.Context, client *Client, status int32) {
@@ -113,7 +133,7 @@ func NewWsServer(msgGatewayConfig *Config, opts ...Option) *WsServer {
 	for _, o := range opts {
 		o(&config)
 	}
-	//userRpcClient := rpcclient.NewUserRpcClient(client, config.Share.RpcRegisterName.User, config.Share.IMAdminUserID)
+	//userRpcClient := rpcclient.NewUserRpcClient(client, config.Discovery.RpcService.User, config.Share.IMAdminUserID)
 
 	v := validator.New()
 	return &WsServer{
@@ -165,21 +185,28 @@ func (ws *WsServer) Run(done chan error) error {
 	go func() {
 		http.HandleFunc("/", ws.wsHandler)
 		err := server.ListenAndServe()
-		defer close(netDone)
-		if err != nil && err != http.ErrServerClosed {
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
 			netErr = errs.WrapMsg(err, "ws start err", server.Addr)
+			netDone <- struct{}{}
 		}
 	}()
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancel()
-	var err error
-	select {
-	case err = <-done:
+	shutDown := func() error {
 		sErr := server.Shutdown(ctx)
 		if sErr != nil {
 			return errs.WrapMsg(sErr, "shutdown err")
 		}
 		close(shutdownDone)
+		return nil
+	}
+	etcd.RegisterShutDown(shutDown)
+	defer cancel()
+	var err error
+	select {
+	case err = <-done:
+		if err := shutDown(); err != nil {
+			return err
+		}
 		if err != nil {
 			return err
 		}
@@ -192,7 +219,7 @@ func (ws *WsServer) Run(done chan error) error {
 var concurrentRequest = 3
 
 func (ws *WsServer) sendUserOnlineInfoToOtherNode(ctx context.Context, client *Client) error {
-	conns, err := ws.disCov.GetConns(ctx, ws.msgGatewayConfig.Share.RpcRegisterName.MessageGateway)
+	conns, err := ws.disCov.GetConns(ctx, ws.msgGatewayConfig.Discovery.RpcService.MessageGateway)
 	if err != nil {
 		return err
 	}
@@ -311,7 +338,7 @@ func (ws *WsServer) multiTerminalLoginChecker(clientOK bool, oldClients []*Clien
 			[]string{newClient.ctx.GetOperationID(), newClient.ctx.GetUserID(),
 				constant.PlatformIDToName(newClient.PlatformID), newClient.ctx.GetConnID()},
 		)
-		if _, err := ws.authClient.KickTokens(ctx, kickTokens); err != nil {
+		if err := ws.authClient.KickTokens(ctx, kickTokens); err != nil {
 			log.ZWarn(newClient.ctx, "kickTokens err", err)
 		}
 	}
@@ -338,7 +365,12 @@ func (ws *WsServer) multiTerminalLoginChecker(clientOK bool, oldClients []*Clien
 			[]string{newClient.ctx.GetOperationID(), newClient.ctx.GetUserID(),
 				constant.PlatformIDToName(newClient.PlatformID), newClient.ctx.GetConnID()},
 		)
-		if _, err := ws.authClient.InvalidateToken(ctx, newClient.token, newClient.UserID, newClient.PlatformID); err != nil {
+		req := &pbAuth.InvalidateTokenReq{
+			PreservedToken: newClient.token,
+			UserID:         newClient.UserID,
+			PlatformID:     int32(newClient.PlatformID),
+		}
+		if err := ws.authClient.InvalidateToken(ctx, req); err != nil {
 			log.ZWarn(newClient.ctx, "InvalidateToken err", err, "userID", newClient.UserID,
 				"platformID", newClient.PlatformID)
 		}

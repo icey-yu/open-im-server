@@ -26,9 +26,7 @@ import (
 )
 
 const (
-	FileName             = "config.yaml"
-	NotificationFileName = "notification.yaml"
-	DefaultFolderPath    = "../config/"
+	DefaultFolderPath = "../config/"
 )
 
 // return absolude path join ../config/, this is k8s container config path.
@@ -61,7 +59,7 @@ func GetProjectRoot() (string, error) {
 func GetOptionsByNotification(cfg NotificationConfig) msgprocessor.Options {
 	opts := msgprocessor.NewOptions()
 
-	if cfg.UnreadCount {
+	if cfg.IsSendMsg {
 		opts = msgprocessor.WithOptions(opts, msgprocessor.WithUnreadCount(true))
 	}
 	if cfg.OfflinePush.Enable {

@@ -3,13 +3,14 @@ package msg
 import (
 	"context"
 	"fmt"
+	"time"
+
 	"github.com/openimsdk/open-im-server/v3/pkg/common/storage/model"
 	"github.com/openimsdk/open-im-server/v3/pkg/msgprocessor"
 	"github.com/openimsdk/protocol/constant"
 	"github.com/openimsdk/protocol/msg"
 	"github.com/openimsdk/protocol/sdkws"
 	"github.com/openimsdk/tools/errs"
-	"time"
 )
 
 const StreamDeadlineTime = time.Second * 60 * 10
@@ -71,7 +72,7 @@ func (m *msgServer) AppendStreamMsg(ctx context.Context, req *msg.AppendStreamMs
 	if err := m.StreamMsgDatabase.AppendStreamMsg(ctx, req.ClientMsgID, int(req.StartIndex), req.Packets, req.End, deadlineTime); err != nil {
 		return nil, err
 	}
-	conversation, err := m.Conversation.GetConversation(ctx, res.UserID, res.ConversationID)
+	conversation, err := m.conversationClient.GetConversation(ctx, res.ConversationID, res.UserID)
 	if err != nil {
 		return nil, err
 	}
