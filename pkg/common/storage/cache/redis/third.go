@@ -7,6 +7,7 @@ import (
 	"github.com/openimsdk/open-im-server/v3/pkg/common/storage/cache"
 	"github.com/openimsdk/open-im-server/v3/pkg/common/storage/cache/cachekey"
 	"github.com/openimsdk/tools/errs"
+	"github.com/openimsdk/tools/log"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -39,6 +40,7 @@ func (c *thirdCache) SetFcmToken(ctx context.Context, account string, platformID
 }
 
 func (c *thirdCache) GetFcmToken(ctx context.Context, account string, platformID int) (string, error) {
+	log.ZDebug(ctx, "GetFcmToken", "account", account, "platformID", platformID, "key", c.getFcmAccountTokenKey(account, platformID))
 	val, err := c.rdb.Get(ctx, c.getFcmAccountTokenKey(account, platformID)).Result()
 	if err != nil {
 		return "", errs.Wrap(err)
