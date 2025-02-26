@@ -22,6 +22,7 @@ import (
 	"strings"
 
 	"github.com/openimsdk/open-im-server/v3/internal/push/offlinepush/options"
+	"github.com/openimsdk/tools/log"
 	"github.com/openimsdk/tools/utils/httputil"
 
 	firebase "firebase.google.com/go/v4"
@@ -73,6 +74,7 @@ func NewClient(pushConf *config.Push, cache cache.ThirdCache, fcmConfigPath stri
 	if err != nil {
 		return nil, errs.Wrap(err)
 	}
+	log.ZInfo(ctx, "user fcm!")
 	return &Fcm{fcmMsgCli: fcmMsgClient, cache: cache}, nil
 }
 
@@ -101,12 +103,13 @@ func (f *Fcm) Push(ctx context.Context, userIDs []string, title, content string,
 		apns := &messaging.APNSConfig{Payload: &messaging.APNSPayload{Aps: &messaging.Aps{Sound: opts.IOSPushSound}}}
 		messageCount := len(messages)
 		if messageCount >= SinglePushCountLimit {
+			log.ZInfo(ctx, "fcm push", "messages", messages)
 			response, err := f.fcmMsgCli.SendEach(ctx, messages)
 			if err != nil {
 				Fail = Fail + messageCount
 				// Record push error
 				sendErrBuilder.WriteString(err.Error())
-				sendErrBuilder.WriteByte('.')
+				sendErrBuilder.WriteByte(';')
 			} else {
 				Success = Success + response.SuccessCount
 				Fail = Fail + response.FailureCount
@@ -115,7 +118,7 @@ func (f *Fcm) Push(ctx context.Context, userIDs []string, title, content string,
 					for i := range response.Responses {
 						if !response.Responses[i].Success {
 							msgErrBuilder.WriteString(response.Responses[i].Error.Error())
-							msgErrBuilder.WriteByte('.')
+							msgErrBuilder.WriteByte(';')
 						}
 					}
 				}
@@ -156,6 +159,7 @@ func (f *Fcm) Push(ctx context.Context, userIDs []string, title, content string,
 	}
 	messageCount := len(messages)
 	if messageCount > 0 {
+		log.ZInfo(ctx, "fcm push", "messages", messages)
 		response, err := f.fcmMsgCli.SendEach(ctx, messages)
 		if err != nil {
 			Fail = Fail + messageCount
