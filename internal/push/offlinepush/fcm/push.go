@@ -74,13 +74,13 @@ func NewClient(pushConf *config.Push, cache cache.ThirdCache, fcmConfigPath stri
 	if err != nil {
 		return nil, errs.Wrap(err)
 	}
-	log.ZInfo(ctx, "use fcm!")
+	log.ZDebug(ctx, "use fcm!")
 	return &Fcm{fcmMsgCli: fcmMsgClient, cache: cache}, nil
 }
 
 func (f *Fcm) Push(ctx context.Context, userIDs []string, title, content string, opts *options.Opts) error {
 	// accounts->registrationToken
-	log.ZInfo(ctx, "BEGIN FCM PUSH")
+	log.ZDebug(ctx, "BEGIN FCM PUSH", "userIDs", userIDs)
 	allTokens := make(map[string][]string, 0)
 	for _, account := range userIDs {
 		var personTokens []string
@@ -93,7 +93,7 @@ func (f *Fcm) Push(ctx context.Context, userIDs []string, title, content string,
 		}
 		allTokens[account] = personTokens
 	}
-	log.ZInfo(ctx, "FCM ALLTOKENS", "tokens", allTokens)
+	log.ZDebug(ctx, "FCM ALLTOKENS", "tokens", allTokens)
 	Success := 0
 	Fail := 0
 	notification := &messaging.Notification{}
@@ -161,7 +161,7 @@ func (f *Fcm) Push(ctx context.Context, userIDs []string, title, content string,
 	}
 	messageCount := len(messages)
 	if messageCount > 0 {
-		log.ZInfo(ctx, "fcm push", "messages", messages)
+		log.ZDebug(ctx, "fcm push", "messages", messages)
 		response, err := f.fcmMsgCli.SendEach(ctx, messages)
 		if err != nil {
 			Fail = Fail + messageCount
