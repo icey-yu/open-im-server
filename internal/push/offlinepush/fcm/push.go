@@ -160,6 +160,7 @@ func (f *Fcm) Push(ctx context.Context, userIDs []string, title, content string,
 		}
 	}
 	messageCount := len(messages)
+	log.ZInfo(ctx, "FCM MESSAGES", "messageCount", messageCount, "message", messages)
 	if messageCount > 0 {
 		log.ZInfo(ctx, "fcm push", "messages", messages)
 		response, err := f.fcmMsgCli.SendEach(ctx, messages)
