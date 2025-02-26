@@ -80,6 +80,7 @@ func NewClient(pushConf *config.Push, cache cache.ThirdCache, fcmConfigPath stri
 
 func (f *Fcm) Push(ctx context.Context, userIDs []string, title, content string, opts *options.Opts) error {
 	// accounts->registrationToken
+	log.ZInfo(ctx, "BEGIN FCM PUSH")
 	allTokens := make(map[string][]string, 0)
 	for _, account := range userIDs {
 		var personTokens []string
