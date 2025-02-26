@@ -58,12 +58,10 @@ func (o *OfflinePushConsumerHandler) getOfflinePushInfos(msg *sdkws.MsgData) (ti
 		opts.IOSBadgeCount = msg.OfflinePushInfo.IOSBadgeCount
 		opts.IOSPushSound = msg.OfflinePushInfo.IOSPushSound
 		opts.Ex = msg.OfflinePushInfo.Ex
-	}
-
-	if msg.OfflinePushInfo != nil {
 		title = msg.OfflinePushInfo.Title
 		content = msg.OfflinePushInfo.Desc
 	}
+
 	if title == "" {
 		switch msg.ContentType {
 		case constant.Text:

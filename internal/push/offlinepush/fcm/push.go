@@ -165,11 +165,23 @@ func (f *Fcm) Push(ctx context.Context, userIDs []string, title, content string,
 		response, err := f.fcmMsgCli.SendEach(ctx, messages)
 		if err != nil {
 			Fail = Fail + messageCount
+			sendErrBuilder.WriteString(err.Error())
+			sendErrBuilder.WriteByte(';')
 		} else {
 			Success = Success + response.SuccessCount
 			Fail = Fail + response.FailureCount
+			if response.FailureCount != 0 {
+				// Record message error
+				for i := range response.Responses {
+					if !response.Responses[i].Success {
+						msgErrBuilder.WriteString(response.Responses[i].Error.Error())
+						msgErrBuilder.WriteByte(';')
+					}
+				}
+			}
 		}
 	}
+	log.ZDebug(ctx, "push result", "success", Success, "fail", Fail, "msgErr", sendErrBuilder)
 	if Fail != 0 {
 		return errs.New(fmt.Sprintf("%d message send failed;send err:%s;message err:%s",
 			Fail, sendErrBuilder.String(), msgErrBuilder.String())).Wrap()
