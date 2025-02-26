@@ -74,7 +74,7 @@ func NewClient(pushConf *config.Push, cache cache.ThirdCache, fcmConfigPath stri
 	if err != nil {
 		return nil, errs.Wrap(err)
 	}
-	log.ZInfo(ctx, "user fcm!")
+	log.ZInfo(ctx, "use fcm!")
 	return &Fcm{fcmMsgCli: fcmMsgClient, cache: cache}, nil
 }
 
@@ -86,6 +86,7 @@ func (f *Fcm) Push(ctx context.Context, userIDs []string, title, content string,
 		var personTokens []string
 		for _, v := range Terminal {
 			Token, err := f.cache.GetFcmToken(ctx, account, v)
+			log.ZDebug(ctx, "GetFcmToken", "token", Token)
 			if err == nil {
 				personTokens = append(personTokens, Token)
 			}
@@ -105,7 +106,6 @@ func (f *Fcm) Push(ctx context.Context, userIDs []string, title, content string,
 		apns := &messaging.APNSConfig{Payload: &messaging.APNSPayload{Aps: &messaging.Aps{Sound: opts.IOSPushSound}}}
 		messageCount := len(messages)
 		if messageCount >= SinglePushCountLimit {
-			log.ZInfo(ctx, "fcm push", "messages", messages)
 			response, err := f.fcmMsgCli.SendEach(ctx, messages)
 			if err != nil {
 				Fail = Fail + messageCount
@@ -160,7 +160,6 @@ func (f *Fcm) Push(ctx context.Context, userIDs []string, title, content string,
 		}
 	}
 	messageCount := len(messages)
-	log.ZInfo(ctx, "FCM MESSAGES", "messageCount", messageCount, "message", messages)
 	if messageCount > 0 {
 		log.ZInfo(ctx, "fcm push", "messages", messages)
 		response, err := f.fcmMsgCli.SendEach(ctx, messages)
