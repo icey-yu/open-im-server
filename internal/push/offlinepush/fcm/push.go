@@ -92,6 +92,7 @@ func (f *Fcm) Push(ctx context.Context, userIDs []string, title, content string,
 		}
 		allTokens[account] = personTokens
 	}
+	log.ZInfo(ctx, "FCM ALLTOKENS", "tokens", allTokens)
 	Success := 0
 	Fail := 0
 	notification := &messaging.Notification{}
