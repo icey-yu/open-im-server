@@ -39,6 +39,20 @@ func (c *tokenCache) SetTokenFlagEx(ctx context.Context, userID string, platform
 	return nil
 }
 
+// SetTemporaryToken set temporary token.
+func (c *tokenCache) SetTemporaryToken(ctx context.Context, userID string, platformID int, token string) error {
+	key := cachekey.GetTemporaryTokenKey(userID, platformID, token)
+	if err := c.rdb.Set(ctx, key, nil, cachekey.TemporaryTokenExpireTime).Err(); err != nil {
+		return errs.Wrap(err)
+	}
+	return nil
+}
+
+// GetTemporaryToken if return nil, it means temporary exist
+func (c *tokenCache) GetTemporaryToken(ctx context.Context, userID string, platformID int, token string) error {
+	return c.rdb.Get(ctx, cachekey.GetTemporaryTokenKey(userID, platformID, token)).Err()
+}
+
 func (c *tokenCache) GetTokensWithoutError(ctx context.Context, userID string, platformID int) (map[string]int, error) {
 	m, err := c.rdb.HGetAll(ctx, cachekey.GetTokenKey(userID, platformID)).Result()
 	if err != nil {

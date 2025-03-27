@@ -161,7 +161,11 @@ func (s *authServer) parseToken(ctx context.Context, tokensString string) (claim
 	}
 	isAdmin := authverify.IsManagerUserID(claims.UserID, s.config.Share.IMAdminUserID)
 	if isAdmin {
-		return claims, nil
+		err = s.authDatabase.GetTemporaryToken(ctx, claims.UserID, claims.PlatformID, tokensString)
+		if err == nil {
+			// has temporary token
+			return claims, nil
+		}
 	}
 	m, err := s.authDatabase.GetTokensWithoutError(ctx, claims.UserID, claims.PlatformID)
 	if err != nil {

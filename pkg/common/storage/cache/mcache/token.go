@@ -12,6 +12,7 @@ import (
 	"github.com/openimsdk/open-im-server/v3/pkg/common/storage/database"
 	"github.com/openimsdk/tools/errs"
 	"github.com/openimsdk/tools/log"
+	"go.mongodb.org/mongo-driver/mongo"
 )
 
 func NewTokenCacheModel(cache database.Cache, accessExpire int64) cache.TokenModel {
@@ -37,6 +38,23 @@ func (x *tokenCache) SetTokenFlag(ctx context.Context, userID string, platformID
 // SetTokenFlagEx set token and flag with expire time
 func (x *tokenCache) SetTokenFlagEx(ctx context.Context, userID string, platformID int, token string, flag int) error {
 	return x.SetTokenFlag(ctx, userID, platformID, token, flag)
+}
+
+// SetTemporaryToken set temporary token
+func (x *tokenCache) SetTemporaryToken(ctx context.Context, userID string, platformID int, token string) error {
+	return x.cache.Set(ctx, cachekey.GetTemporaryTokenKey(userID, platformID, token), "", cachekey.TemporaryTokenExpireTime)
+}
+
+// GetTemporaryToken if return nil, it means temporary exist
+func (x *tokenCache) GetTemporaryToken(ctx context.Context, userID string, platformID int, token string) error {
+	res, err := x.cache.Get(ctx, []string{cachekey.GetTemporaryTokenKey(userID, platformID, token)})
+	if err != nil {
+		return err
+	}
+	if len(res) != 0 {
+		return nil
+	}
+	return errs.Wrap(mongo.ErrNoDocuments)
 }
 
 func (x *tokenCache) GetTokensWithoutError(ctx context.Context, userID string, platformID int) (map[string]int, error) {

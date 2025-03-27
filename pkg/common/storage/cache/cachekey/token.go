@@ -1,8 +1,14 @@
 package cachekey
 
 import (
-	"github.com/openimsdk/protocol/constant"
 	"strings"
+	"time"
+
+	"github.com/openimsdk/protocol/constant"
+)
+
+const (
+	TemporaryTokenExpireTime = 5 * time.Minute
 )
 
 const (
@@ -25,4 +31,8 @@ func GetPlatformIDByTokenKey(key string) int {
 	splitKey := strings.Split(key, ":")
 	platform := splitKey[len(splitKey)-1]
 	return constant.PlatformNameToID(platform)
+}
+
+func GetTemporaryTokenKey(userID string, platformID int, token string) string {
+	return GetTokenKey(userID, platformID) + ":temp" + ":" + token
 }

@@ -472,6 +472,10 @@ func (m *MessageApi) SendSimpleMessage(c *gin.Context) {
 		apiresp.GinError(c, errs.ErrArgs.WithDetail(err.Error()).Wrap())
 		return
 	}
+	if err = c.BindJSON(&req); err != nil {
+		apiresp.GinError(c, errs.ErrArgs.WithDetail(err.Error()).Wrap())
+		return
+	}
 	if keyMsgData.GroupID != "" {
 		sessionType = constant.ReadGroupChatType
 		sendID = req.SendID

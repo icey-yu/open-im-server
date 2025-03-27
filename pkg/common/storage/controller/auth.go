@@ -15,6 +15,8 @@ import (
 )
 
 type AuthDatabase interface {
+	// GetTemporaryToken if return nil, it means temporary exist
+	GetTemporaryToken(ctx context.Context, userID string, platformID int, token string) error
 	// If the result is empty, no error is returned.
 	GetTokensWithoutError(ctx context.Context, userID string, platformID int) (map[string]int, error)
 	// Create token
@@ -45,6 +47,11 @@ func NewAuthDatabase(cache cache.TokenModel, accessSecret string, accessExpire i
 	},
 		adminUserIDs: adminUserIDs,
 	}
+}
+
+// GetTemporaryToken if return nil, it means temporary exist
+func (a *authDatabase) GetTemporaryToken(ctx context.Context, userID string, platformID int, token string) error {
+	return a.cache.GetTemporaryToken(ctx, userID, platformID, token)
 }
 
 // If the result is empty.
@@ -96,12 +103,25 @@ func (a *authDatabase) CreateToken(ctx context.Context, userID string, platformI
 		}
 	}
 	if len(kickedTokenKey) != 0 {
-		for _, k := range kickedTokenKey {
-			err := a.cache.SetTokenFlagEx(ctx, userID, platformID, k, constant.KickedToken)
+		if platformID == constant.AdminPlatformID {
+			for _, token := range kickedTokenKey {
+				err = a.cache.SetTemporaryToken(ctx, userID, platformID, token)
+				if err != nil {
+					return "", err
+				}
+			}
+			err = a.cache.DeleteTokenByUidPid(ctx, userID, platformID, kickedTokenKey)
 			if err != nil {
 				return "", err
 			}
-			log.ZDebug(ctx, "kicked token in create token", "token", k)
+		} else {
+			for _, k := range kickedTokenKey {
+				err = a.cache.SetTokenFlagEx(ctx, userID, platformID, k, constant.KickedToken)
+				if err != nil {
+					return "", err
+				}
+				log.ZDebug(ctx, "kicked token in create token", "token", k)
+			}
 		}
 	}
 
