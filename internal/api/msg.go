@@ -494,6 +494,8 @@ func (m *MessageApi) SendSimpleMessage(c *gin.Context) {
 		return
 	}
 
+	content, _ := json.Marshal(apistruct.MarkdownTextElem{Content: req.Content})
+
 	msgData := &sdkws.MsgData{
 		SendID:           sendID,
 		RecvID:           recvID,
@@ -502,17 +504,17 @@ func (m *MessageApi) SendSimpleMessage(c *gin.Context) {
 		SenderPlatformID: constant.AdminPlatformID,
 		SessionType:      sessionType,
 		MsgFrom:          constant.UserMsgType,
-		ContentType:      constant.Text,
-		Content:          []byte(req.Content),
+		ContentType:      constant.MarkdownText,
+		Content:          content,
 		OfflinePushInfo:  req.OfflinePushInfo,
 		Ex:               req.Ex,
 	}
 
-	sendReq := &msg.SendMsgReq{
+	sendReq := &msg.SendSimpleMsgReq{
 		MsgData: msgData,
 	}
 
-	respPb, err := m.Client.SendMsg(c, sendReq)
+	respPb, err := m.Client.SendSimpleMsg(c, sendReq)
 	if err != nil {
 		apiresp.GinError(c, err)
 		return
@@ -529,7 +531,14 @@ func (m *MessageApi) SendSimpleMessage(c *gin.Context) {
 		return
 	}
 
-	m.ginRespSendMsg(c, sendReq, respPb)
+	msgReq := &msg.SendMsgReq{MsgData: msgData}
+	msgResp := &msg.SendMsgResp{
+		ServerMsgID: respPb.ServerMsgID,
+		ClientMsgID: respPb.ClientMsgID,
+		SendTime:    respPb.SendTime,
+		Modify:      respPb.Modify,
+	}
+	m.ginRespSendMsg(c, msgReq, msgResp)
 }
 
 func (m *MessageApi) CheckMsgIsSendSuccess(c *gin.Context) {
