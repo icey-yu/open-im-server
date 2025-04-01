@@ -494,7 +494,8 @@ func (m *MessageApi) SendSimpleMessage(c *gin.Context) {
 		return
 	}
 
-	content, _ := json.Marshal(apistruct.MarkdownTextElem{Content: req.Content})
+	//content, _ := json.Marshal(apistruct.MarkdownTextElem{Content: req.Content})
+	content, _ := json.Marshal(apistruct.TextElem{Content: req.Content})
 
 	msgData := &sdkws.MsgData{
 		SendID:           sendID,
@@ -504,10 +505,11 @@ func (m *MessageApi) SendSimpleMessage(c *gin.Context) {
 		SenderPlatformID: constant.AdminPlatformID,
 		SessionType:      sessionType,
 		MsgFrom:          constant.UserMsgType,
-		ContentType:      constant.MarkdownText,
-		Content:          content,
-		OfflinePushInfo:  req.OfflinePushInfo,
-		Ex:               req.Ex,
+		//ContentType:      constant.MarkdownText,
+		ContentType:     constant.Text,
+		Content:         content,
+		OfflinePushInfo: req.OfflinePushInfo,
+		Ex:              req.Ex,
 	}
 
 	sendReq := &msg.SendSimpleMsgReq{
