@@ -84,7 +84,7 @@ type TextElem struct {
 }
 
 type MarkdownTextElem struct {
-	Content string `mapstructure:"content" validate:"required"`
+	Content string `mapstructure:"content" json:"content" validate:"required" `
 }
 
 type StreamMsgElem struct {
