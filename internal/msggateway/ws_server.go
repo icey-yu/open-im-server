@@ -332,6 +332,7 @@ func (ws *WsServer) multiTerminalLoginChecker(clientOK bool, oldClients []*Clien
 			[]string{newClient.ctx.GetOperationID(), newClient.ctx.GetUserID(),
 				constant.PlatformIDToName(newClient.PlatformID), newClient.ctx.GetConnID()},
 		)
+		log.ZDebug(ctx, "kick token in multiTerminalLoginChecker", "kickTokens", kickTokens)
 		if err := ws.authClient.KickTokens(ctx, kickTokens); err != nil {
 			log.ZWarn(newClient.ctx, "kickTokens err", err)
 		}
